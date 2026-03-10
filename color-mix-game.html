@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Color Mix Game</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 24px 16px;
+    gap: 20px;
+  }
+
+  h1 {
+    font-size: clamp(1.2rem, 5vw, 1.8rem);
+    letter-spacing: 0.05em;
+    color: #c8d8e8;
+  }
+
+  .streak {
+    font-size: clamp(1rem, 4.5vw, 1.2rem);
+    color: #8a8;
+  }
+
+  .prompt {
+    font-size: clamp(1.1rem, 5vw, 1.4rem);
+    color: #e8d080;
+    text-align: center;
+    padding: 0 8px;
+    font-weight: bold;
+    letter-spacing: 0.03em;
+  }
+
+  .reference-row {
+    display: flex;
+    gap: clamp(12px, 4vw, 32px);
+    align-items: flex-end;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .color-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .ref-square {
+    width: clamp(70px, 22vw, 130px);
+    height: clamp(70px, 22vw, 130px);
+    border-radius: 12px;
+    border: 3px solid #444;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  }
+
+  .label {
+    font-size: clamp(0.7rem, 3vw, 0.85rem);
+    color: #99a;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .plus {
+    font-size: clamp(1.8rem, 6vw, 2.5rem);
+    color: #556;
+    padding-bottom: clamp(36px, 9vw, 50px);
+  }
+
+  /* Answer grid: 3 on top row, 2 on bottom row (centered) */
+  .answer-grid {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: clamp(8px, 2.5vw, 14px);
+    width: 100%;
+    max-width: 420px;
+  }
+
+  .answer-row-top,
+  .answer-row-bottom {
+    display: flex;
+    gap: clamp(8px, 2.5vw, 14px);
+    justify-content: center;
+  }
+
+  .answer-square {
+    width: clamp(56px, 17vw, 110px);
+    height: clamp(56px, 17vw, 110px);
+    border-radius: 10px;
+    border: 4px solid transparent;
+    cursor: pointer;
+    transition: transform 0.1s, border-color 0.2s, box-shadow 0.2s;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.4);
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  @media (hover: hover) {
+    .answer-square:hover:not(.locked) {
+      transform: scale(1.07);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+      border-color: #88a;
+    }
+  }
+
+  .answer-square.correct {
+    border-color: #44ff88;
+    box-shadow: 0 0 20px rgba(68, 255, 136, 0.6);
+    transform: scale(1.07);
+  }
+
+  .answer-square.wrong {
+    border-color: #ff4455;
+    box-shadow: 0 0 16px rgba(255, 68, 85, 0.5);
+  }
+
+  .answer-square.locked {
+    cursor: default;
+  }
+
+  #countdown {
+    font-size: clamp(0.85rem, 3.5vw, 1rem);
+    min-height: 1.4em;
+    text-align: center;
+  }
+
+  #countdown.ticking {
+    color: #7799cc;
+    font-weight: bold;
+    letter-spacing: 0.05em;
+  }
+
+  #streak-hint {
+    font-size: clamp(0.9rem, 3.5vw, 1rem);
+    color: #99aacc;
+    text-align: center;
+    min-height: 1.2em;
+    letter-spacing: 0.03em;
+  }
+
+  #extra-lives {
+    font-size: clamp(1rem, 4vw, 1.2rem);
+    text-align: center;
+    min-height: 1.4em;
+    letter-spacing: 0.1em;
+  }
+
+  #win-banner {
+    display: none;
+    background: linear-gradient(135deg, #1a7a4a, #2ab870);
+    color: #fff;
+    font-size: clamp(1rem, 4vw, 1.3rem);
+    font-weight: bold;
+    letter-spacing: 0.08em;
+    padding: clamp(14px, 4vw, 20px) clamp(24px, 8vw, 48px);
+    border-radius: 10px;
+    text-align: center;
+    box-shadow: 0 4px 24px rgba(42, 184, 112, 0.5);
+    animation: bannerPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+
+  #feedback {
+    font-size: clamp(0.95rem, 4vw, 1.1rem);
+    min-height: 1.4em;
+    text-align: center;
+    padding: 0 12px;
+  }
+
+  .feedback-correct { color: #44ff88; }
+  .feedback-wrong   { color: #ff6677; }
+
+  @keyframes bannerPop {
+    from { transform: scale(0.7); opacity: 0; }
+    to   { transform: scale(1);   opacity: 1; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Color Mix Game</h1>
+<div id="streak-hint">Reach a streak of 20 to win! Answer fast to earn extra lives.</div>
+<div class="streak" id="streak">Streak: 0</div>
+<div id="extra-lives"></div>
+
+<div id="win-banner">🎉 You win!</div>
+
+<div class="prompt" id="prompt">Which square is the mix of these two colors?</div>
+
+<div class="reference-row" id="reference-row">
+  <div class="color-block">
+    <div class="ref-square" id="color-a"></div>
+    <div class="label">Color A</div>
+  </div>
+  <div class="plus">+</div>
+  <div class="color-block">
+    <div class="ref-square" id="color-b"></div>
+    <div class="label">Color B</div>
+  </div>
+</div>
+
+<div class="answer-grid" id="answer-grid"></div>
+
+<div id="feedback"></div>
+<div id="countdown"></div>
+
+<script>
+  // ── Audio ──────────────────────────────────────────────────────────────────
+  const AC = window.AudioContext || window.webkitAudioContext;
+  let ac = null;
+
+  function getAC() {
+    if (!ac) ac = new AC();
+    return ac;
+  }
+
+  function playCorrect() {
+    const ctx = getAC();
+    const notes = [523.25, 783.99];
+    notes.forEach((freq, i) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.12);
+      gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.12);
+      gain.gain.linearRampToValueAtTime(0.25, ctx.currentTime + i * 0.12 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.12 + 0.35);
+      osc.start(ctx.currentTime + i * 0.12);
+      osc.stop(ctx.currentTime + i * 0.12 + 0.36);
+    });
+  }
+
+  function playWrong() {
+    const ctx = getAC();
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(220, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(110, ctx.currentTime + 0.3);
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.36);
+  }
+
+  function playClick() {
+    const ctx = getAC();
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.09);
+  }
+
+  function playHardMode() {
+    const ctx = getAC();
+    // Triumphant ascending arpeggio
+    const notes = [261.63, 329.63, 392.00, 523.25];
+    notes.forEach((freq, i) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.1);
+      gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.1);
+      gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + i * 0.1 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.1 + 0.4);
+      osc.start(ctx.currentTime + i * 0.1);
+      osc.stop(ctx.currentTime + i * 0.1 + 0.41);
+    });
+  }
+
+  function playExtraLife() {
+    const ctx = getAC();
+    [1046.5, 1318.5].forEach((freq, i) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.1);
+      gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.1);
+      gain.gain.linearRampToValueAtTime(0.18, ctx.currentTime + i * 0.1 + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.1 + 0.25);
+      osc.start(ctx.currentTime + i * 0.1);
+      osc.stop(ctx.currentTime + i * 0.1 + 0.26);
+    });
+  }
+
+  // ── Game state ─────────────────────────────────────────────────────────────
+  let totalCorrect = 0;
+  let totalRounds  = 0;
+  let streak       = 0;
+  let extraLives   = 0;
+  let correctIndex = -1;
+  let answered     = false;
+  let roundStartTime = 0;
+  let autoAdvanceTimer = null;
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  function randInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  function clampCh(v) { return Math.max(0, Math.min(255, Math.round(v))); }
+
+  function rgbStr(c) { return `rgb(${c.r},${c.g},${c.b})`; }
+
+  function colorDist(a, b) {
+    return Math.sqrt((a.r-b.r)**2 + (a.g-b.g)**2 + (a.b-b.b)**2);
+  }
+
+  function randColor() {
+    return { r: randInt(20, 235), g: randInt(20, 235), b: randInt(20, 235) };
+  }
+
+  function mixColors(a, b) {
+    return {
+      r: clampCh(Math.sqrt(a.r * b.r)),
+      g: clampCh(Math.sqrt(a.g * b.g)),
+      b: clampCh(Math.sqrt(a.b * b.b))
+    };
+  }
+
+  function generateReferencePair() {
+    let a, b;
+    do {
+      a = randColor();
+      b = randColor();
+    } while (colorDist(a, b) < 120);
+    return { a, b };
+  }
+
+  function generateDistractor(mix, existing) {
+    let candidate;
+    let attempts = 0;
+    do {
+      const offsets = [0,1,2].map(() => {
+        const sign = Math.random() < 0.5 ? 1 : -1;
+        return sign * randInt(30, 80);
+      });
+      candidate = {
+        r: clampCh(mix.r + offsets[0]),
+        g: clampCh(mix.g + offsets[1]),
+        b: clampCh(mix.b + offsets[2])
+      };
+      attempts++;
+    } while (
+      attempts < 100 &&
+      existing.some(e => colorDist(e, candidate) < 40)
+    );
+    return candidate;
+  }
+
+  // ── UI helpers ─────────────────────────────────────────────────────────────
+  function updateExtraLives() {
+    document.getElementById('extra-lives').textContent =
+      extraLives > 0 ? '❤️'.repeat(extraLives) : '';
+  }
+
+  function updateStreak() {
+    document.getElementById('streak').textContent = `Streak: ${streak}`;
+  }
+
+  function showWin() {
+    document.getElementById('win-banner').style.display = 'block';
+    document.getElementById('answer-grid').innerHTML = '';
+    document.getElementById('feedback').textContent = '';
+    document.getElementById('countdown').textContent = '';
+    document.getElementById('prompt').style.display = 'none';
+    document.getElementById('reference-row').style.display = 'none';
+    playHardMode();
+  }
+
+  // ── Round logic ────────────────────────────────────────────────────────────
+  function newRound() {
+    answered = false;
+    if (autoAdvanceTimer) {
+      clearInterval(autoAdvanceTimer);
+      autoAdvanceTimer = null;
+    }
+    document.getElementById('feedback').textContent = '';
+    document.getElementById('feedback').className = '';
+    const cd = document.getElementById('countdown');
+    cd.className = '';
+    cd.textContent = '';
+
+    roundStartTime = Date.now();
+    const { a, b } = generateReferencePair();
+    const mix = mixColors(a, b);
+    document.getElementById('color-a').style.background = rgbStr(a);
+    document.getElementById('color-b').style.background = rgbStr(b);
+
+    const answers = [mix];
+    for (let i = 0; i < 4; i++) {
+      answers.push(generateDistractor(mix, answers));
+    }
+
+    // Fisher-Yates shuffle
+    for (let i = answers.length - 1; i > 0; i--) {
+      const j = randInt(0, i);
+      [answers[i], answers[j]] = [answers[j], answers[i]];
+    }
+
+    correctIndex = answers.indexOf(mix);
+
+    // Build grid: 3+2
+    const grid = document.getElementById('answer-grid');
+    grid.innerHTML = '';
+
+    const topRow = document.createElement('div');
+    topRow.className = 'answer-row-top';
+    const botRow = document.createElement('div');
+    botRow.className = 'answer-row-bottom';
+
+    answers.forEach((color, idx) => {
+      const sq = document.createElement('div');
+      sq.className = 'answer-square';
+      sq.style.background = rgbStr(color);
+      sq.dataset.index = idx;
+      sq.addEventListener('click', () => handleClick(idx, sq));
+      (idx < 3 ? topRow : botRow).appendChild(sq);
+    });
+
+    grid.appendChild(topRow);
+    grid.appendChild(botRow);
+  }
+
+  function handleClick(idx, sq) {
+    if (answered) return;
+    answered = true;
+    totalRounds++;
+
+    const squares = document.querySelectorAll('.answer-square');
+    squares.forEach(s => s.classList.add('locked'));
+
+    const correctSq = document.querySelector(`.answer-square[data-index="${correctIndex}"]`);
+    correctSq.classList.add('correct');
+
+    const feedback = document.getElementById('feedback');
+    if (idx === correctIndex) {
+      totalCorrect++;
+      streak++;
+
+      if (streak >= 20) {
+        updateStreak();
+        showWin();
+        return;
+      }
+
+      // Award extra life for answering within 2 seconds
+      if (Date.now() - roundStartTime <= 2000) {
+        extraLives++;
+        updateExtraLives();
+        playExtraLife();
+        feedback.textContent = 'Correct! +❤️';
+      } else {
+        feedback.textContent = 'Correct!';
+      }
+
+      feedback.className = 'feedback-correct';
+      playCorrect();
+    } else {
+      if (extraLives > 0) {
+        extraLives--;
+        updateExtraLives();
+        feedback.textContent = 'Wrong — but an extra life saved your streak! ❤️';
+        feedback.className = 'feedback-wrong';
+        playWrong();
+      } else {
+        streak = 0;
+        feedback.textContent = 'Wrong — the correct mix is highlighted.';
+        feedback.className = 'feedback-wrong';
+        playWrong();
+      }
+      sq.classList.add('wrong');
+    }
+
+    updateStreak();
+    startAutoAdvance();
+  }
+
+  function startAutoAdvance() {
+    const cd = document.getElementById('countdown');
+    let remaining = 2;
+    cd.className = 'ticking';
+    cd.textContent = `Next round in ${remaining}…`;
+
+    autoAdvanceTimer = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) {
+        clearInterval(autoAdvanceTimer);
+        autoAdvanceTimer = null;
+        nextRound();
+      } else {
+        cd.textContent = `Next round in ${remaining}…`;
+      }
+    }, 1000);
+  }
+
+  function nextRound() {
+    if (autoAdvanceTimer) {
+      clearInterval(autoAdvanceTimer);
+      autoAdvanceTimer = null;
+    }
+    playClick();
+    newRound();
+  }
+
+  newRound();
+</script>
+</body>
+</html>
