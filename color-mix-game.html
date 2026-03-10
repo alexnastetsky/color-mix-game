@@ -9,7 +9,9 @@
 
   body {
     font-family: sans-serif;
-    background: #1a1a2e;
+    background-color: #1a1a2e;
+    background-image: radial-gradient(rgba(255,255,255,0.18) 1.5px, transparent 1.5px);
+    background-size: 18px 18px;
     color: #eee;
     display: flex;
     flex-direction: column;
@@ -177,6 +179,7 @@
 
   .feedback-correct { color: #44ff88; }
   .feedback-wrong   { color: #ff6677; }
+  .feedback-hint    { color: #888; font-size: 0.9em; }
 
   @keyframes bannerPop {
     from { transform: scale(0.7); opacity: 0; }
@@ -187,7 +190,7 @@
 <body>
 
 <h1>Color Mix Game</h1>
-<div id="streak-hint">Reach a streak of 20 to win! Answer fast to earn extra lives.</div>
+<div id="streak-hint">Reach a streak of 50 to win! Answer fast to earn extra lives.</div>
 <div class="streak" id="streak">Streak: 0</div>
 <div id="extra-lives"></div>
 
@@ -204,6 +207,11 @@
   <div class="color-block">
     <div class="ref-square" id="color-b"></div>
     <div class="label">Color B</div>
+  </div>
+  <div class="plus" id="plus-second" style="display:none">+</div>
+  <div class="color-block" id="color-c-block" style="display:none">
+    <div class="ref-square" id="color-c"></div>
+    <div class="label">Color C</div>
   </div>
 </div>
 
@@ -288,6 +296,37 @@
     });
   }
 
+  function playMilestone() {
+    const ctx = getAC();
+    // Triumphant 3-note lock-in chime: C5 → E5 → G5, with a shimmer
+    const notes = [523.25, 659.25, 783.99];
+    notes.forEach((freq, i) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.15);
+      gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.15);
+      gain.gain.linearRampToValueAtTime(0.28, ctx.currentTime + i * 0.15 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.15 + 0.55);
+      osc.start(ctx.currentTime + i * 0.15);
+      osc.stop(ctx.currentTime + i * 0.15 + 0.56);
+    });
+    // High shimmer on the last note
+    const shimmer = ctx.createOscillator();
+    const shimmerGain = ctx.createGain();
+    shimmer.connect(shimmerGain);
+    shimmerGain.connect(ctx.destination);
+    shimmer.type = 'sine';
+    shimmer.frequency.setValueAtTime(1567.98, ctx.currentTime + 0.3);
+    shimmerGain.gain.setValueAtTime(0, ctx.currentTime + 0.3);
+    shimmerGain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.32);
+    shimmerGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.85);
+    shimmer.start(ctx.currentTime + 0.3);
+    shimmer.stop(ctx.currentTime + 0.86);
+  }
+
   function playExtraLife() {
     const ctx = getAC();
     [1046.5, 1318.5].forEach((freq, i) => {
@@ -314,6 +353,8 @@
   let answered     = false;
   let roundStartTime = 0;
   let autoAdvanceTimer = null;
+  let roundThirdColor = null;
+  let roundExtraLifeMs = 2000;
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   function randInt(min, max) {
@@ -332,7 +373,50 @@
     return { r: randInt(20, 235), g: randInt(20, 235), b: randInt(20, 235) };
   }
 
-  function mixColors(a, b) {
+  function getThirdColor(streak) {
+    if (streak < 10) return null;
+    const white  = {r:255, g:255, b:255};
+    const black  = {r:55,  g:55,  b:55};
+    const red    = {r:255, g:0,   b:0};
+    const yellow = {r:255, g:255, b:0};
+    const blue   = {r:0,   g:0,   b:255};
+    const all    = [white, black, red, yellow, blue];
+    if (streak < 15) return white;
+    if (streak < 20) return black;
+    if (streak < 25) return red;
+    if (streak < 30) return yellow;
+    if (streak < 35) return blue;
+    return all[Math.floor(Math.random() * all.length)];
+  }
+
+  const MILESTONES = [10, 15, 20, 25, 30, 35, 40, 50];
+
+  function lastMilestone(streak) {
+    const floors = [0, ...MILESTONES.slice(0, -1)];
+    for (let i = floors.length - 1; i >= 0; i--) {
+      if (streak >= floors[i]) return floors[i];
+    }
+    return 0;
+  }
+
+  function nextMilestone(streak) {
+    return MILESTONES.find(m => m > streak) ?? null;
+  }
+
+  function getExtraLifeMs(streak) {
+    if (streak < 10) return 3000;
+    if (streak < 40) return 4000;
+    return 5000;
+  }
+
+  function mixColors(a, b, c) {
+    if (c) {
+      return {
+        r: clampCh(Math.cbrt(a.r * b.r * c.r)),
+        g: clampCh(Math.cbrt(a.g * b.g * c.g)),
+        b: clampCh(Math.cbrt(a.b * b.b * c.b))
+      };
+    }
     return {
       r: clampCh(Math.sqrt(a.r * b.r)),
       g: clampCh(Math.sqrt(a.g * b.g)),
@@ -355,7 +439,7 @@
     do {
       const offsets = [0,1,2].map(() => {
         const sign = Math.random() < 0.5 ? 1 : -1;
-        return sign * randInt(30, 80);
+        return sign * randInt(45, 90);
       });
       candidate = {
         r: clampCh(mix.r + offsets[0]),
@@ -365,7 +449,7 @@
       attempts++;
     } while (
       attempts < 100 &&
-      existing.some(e => colorDist(e, candidate) < 40)
+      existing.some(e => colorDist(e, candidate) < 65)
     );
     return candidate;
   }
@@ -378,6 +462,14 @@
 
   function updateStreak() {
     document.getElementById('streak').textContent = `Streak: ${streak}`;
+    const next = nextMilestone(streak);
+    const hint = document.getElementById('streak-hint');
+    if (next !== null) {
+      const needed = next - streak;
+      hint.textContent = `${needed} more to reach milestone ${next}!`;
+    } else {
+      hint.textContent = 'You\'ve passed all milestones — reach 50 to win!';
+    }
   }
 
   function showWin() {
@@ -403,11 +495,29 @@
     cd.className = '';
     cd.textContent = '';
 
+    roundThirdColor = getThirdColor(streak);
+    roundExtraLifeMs = getExtraLifeMs(streak);
+
+    const feedbackEl = document.getElementById('feedback');
+    feedbackEl.textContent = `Answer within ${roundExtraLifeMs / 1000}s to earn an extra life ❤️`;
+    feedbackEl.className = 'feedback-hint';
+
     roundStartTime = Date.now();
     const { a, b } = generateReferencePair();
-    const mix = mixColors(a, b);
+    const mix = mixColors(a, b, roundThirdColor);
     document.getElementById('color-a').style.background = rgbStr(a);
     document.getElementById('color-b').style.background = rgbStr(b);
+
+    const colorCBlock = document.getElementById('color-c-block');
+    const plusSecond  = document.getElementById('plus-second');
+    if (roundThirdColor) {
+      document.getElementById('color-c').style.background = rgbStr(roundThirdColor);
+      colorCBlock.style.display = '';
+      plusSecond.style.display  = '';
+    } else {
+      colorCBlock.style.display = 'none';
+      plusSecond.style.display  = 'none';
+    }
 
     const answers = [mix];
     for (let i = 0; i < 4; i++) {
@@ -456,28 +566,36 @@
     correctSq.classList.add('correct');
 
     const feedback = document.getElementById('feedback');
+    const SAVE_MILESTONES = [10, 15, 20, 25, 30, 35, 40];
+    let hitMilestone = false;
     if (idx === correctIndex) {
       totalCorrect++;
       streak++;
 
-      if (streak >= 20) {
+      if (streak >= 50) {
         updateStreak();
         showWin();
         return;
       }
 
-      // Award extra life for answering within 2 seconds
-      if (Date.now() - roundStartTime <= 2000) {
+      // Award extra life for answering quickly
+      hitMilestone = SAVE_MILESTONES.includes(streak);
+
+      if (Date.now() - roundStartTime <= roundExtraLifeMs) {
         extraLives++;
         updateExtraLives();
         playExtraLife();
-        feedback.textContent = 'Correct! +❤️';
+        feedback.textContent = hitMilestone
+          ? `Milestone ${streak} locked in — save point set! 🔒 +❤️`
+          : 'Correct! +❤️';
       } else {
-        feedback.textContent = 'Correct!';
+        feedback.textContent = hitMilestone
+          ? `Milestone ${streak} locked in — save point set! 🔒`
+          : 'Correct!';
       }
 
       feedback.className = 'feedback-correct';
-      playCorrect();
+      if (hitMilestone) playMilestone(); else playCorrect();
     } else {
       if (extraLives > 0) {
         extraLives--;
@@ -486,8 +604,10 @@
         feedback.className = 'feedback-wrong';
         playWrong();
       } else {
-        streak = 0;
-        feedback.textContent = 'Wrong — the correct mix is highlighted.';
+        const floor = lastMilestone(streak);
+        streak = floor;
+        const floorMsg = floor > 0 ? ` Streak reset to ${floor}.` : ' Streak reset.';
+        feedback.textContent = 'Wrong — the correct mix is highlighted.' + floorMsg;
         feedback.className = 'feedback-wrong';
         playWrong();
       }
@@ -495,12 +615,12 @@
     }
 
     updateStreak();
-    startAutoAdvance();
+    startAutoAdvance(hitMilestone ? 5 : 2);
   }
 
-  function startAutoAdvance() {
+  function startAutoAdvance(seconds = 2) {
     const cd = document.getElementById('countdown');
-    let remaining = 2;
+    let remaining = seconds;
     cd.className = 'ticking';
     cd.textContent = `Next round in ${remaining}…`;
 
@@ -525,6 +645,7 @@
     newRound();
   }
 
+  updateStreak();
   newRound();
 </script>
 </body>
