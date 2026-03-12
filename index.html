@@ -658,12 +658,16 @@
     };
   }
 
-  function generateReferencePair() {
+  function isMuddy(color) {
+    return (Math.max(color.r, color.g, color.b) - Math.min(color.r, color.g, color.b)) < 60;
+  }
+
+  function generateReferencePair(thirdColor) {
     let a, b;
     do {
       a = randColor();
       b = randColor();
-    } while (colorDist(a, b) < 120);
+    } while (colorDist(a, b) < 120 || isMuddy(mixColors(a, b, thirdColor)));
     return { a, b };
   }
 
@@ -811,7 +815,7 @@
     cd.textContent = '';
 
     roundThirdColor = getThirdColor(streak);
-    roundExtraLifeMs = window.matchMedia('(hover: hover)').matches ? 3000 : 2000;
+    roundExtraLifeMs = 1500;
 
     const feedbackEl = document.getElementById('feedback');
     feedbackEl.textContent = 'Answer fast to earn an extra life ❤️';
@@ -841,7 +845,7 @@
       grid.classList.add('answer-grid--reverse');
       const numChoices = getNumChoices(streak);
 
-      const { a, b } = generateReferencePair();
+      const { a, b } = generateReferencePair(roundThirdColor);
       const mix = mixColors(a, b, roundThirdColor);
 
       document.getElementById('color-a').style.background = rgbStr(mix);
@@ -929,7 +933,7 @@
       // ── Forward mode: show source colors, pick mix ────────────────────────
       document.getElementById('prompt').textContent = 'Which square is the mix of these colors?';
 
-      const { a, b } = generateReferencePair();
+      const { a, b } = generateReferencePair(roundThirdColor);
       const mix = mixColors(a, b, roundThirdColor);
 
       document.getElementById('color-a').style.background = rgbStr(a);
@@ -1043,13 +1047,15 @@
           feedback.textContent = 'Wrong — the correct mix is highlighted.' + floorMsg;
           feedback.className = 'feedback-wrong';
           playWrong();
+        } else if (floor === 0) {
+          // Pre-first-milestone — no last chance or game over yet
+          feedback.textContent = 'Wrong — the correct mix is highlighted.';
+          feedback.className = 'feedback-wrong';
+          playWrong();
         } else if (!lastChance) {
           // Already at floor — first warning
           lastChance = true;
-          const dangerMsg = floor > 0
-            ? `⚠️ You're at save point ${floor}. One more wrong answer and it's game over!`
-            : '⚠️ One more wrong answer and it\'s game over!';
-          feedback.textContent = dangerMsg;
+          feedback.textContent = `⚠️ You're at save point ${floor}. One more wrong answer and it's game over!`;
           feedback.className = 'feedback-wrong';
           playWrong();
         } else {
